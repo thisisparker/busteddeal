@@ -29,8 +29,10 @@ def check_documentcloud():
         if doc_id not in already_seen:
             doc = client.documents.get(doc_id)
             title = doc.title.replace(' (Twitter v. Musk)', '')
+            reply = doc.data.get('tweetid',[''])[0]
             tweet = f'New document upload: {title} {doc.canonical_url}'
-            tweets.append(tweet)
+            tweets.append({'reply':reply,
+                           'text':tweet})
             already_seen.append(doc_id)
 
     with open('seen_docs.yaml', 'w') as f:
@@ -78,7 +80,9 @@ def check_mail():
         trunc_title = (doc_title[:char_max] + '…' if len(doc_title) > char_max
                         else doc_title)
 
-        tweets.append(' '.join([intro, trunc_title, page_count, appendix]))
+        tweets.append({'reply':'',
+                       'text':' '.join([intro, trunc_title,
+                                        page_count, appendix])})
 
     mailserver.logout()
 
@@ -98,8 +102,12 @@ def main():
                     access_token_secret=config['twitter-token-secret'])
 
         for tweet in tweets:
-            print(tweet)
-            client.create_tweet(text=tweet)
+            print(tweet.get('text','hmmm no tweet text'))
+            if tweet.get('reply'):
+                client.create_tweet(text=tweet.get('text'),
+                                in_repy_to_tweet_id=tweet.get('reply'))
+            else:
+                client.create_tweet(text=tweet.get('text'))
 
             time.sleep(10)
 
