@@ -19,7 +19,13 @@ with open('config.yaml') as f:
 def check_documentcloud():
     client = DocumentCloud()
 
-    uploaded_docs = client.projects.get_by_id('208859').document_ids
+    try:
+        uploaded_docs = client.projects.get_by_id('208859').document_ids
+    except:
+        return []
+
+    with open('attribution.yaml') as f:
+        attribution_dict = yaml.safe_load(f)
 
     with open('seen_docs.yaml') as f:
         already_seen = yaml.safe_load(f)
@@ -30,7 +36,10 @@ def check_documentcloud():
             doc = client.documents.get(doc_id)
             title = doc.title.replace(' (Twitter v. Musk)', '')
             reply = doc.data.get('tweetid',[''])[0]
-            tweet = f'New document upload: {title} {doc.canonical_url}'
+            tweet = f'New document upload'
+            if doc.user.username in attribution_dict:
+                tweet += f'ed by {attribution_dict.get(doc.user.username)}'
+            tweet += f': {title} {doc.canonical_url}'
             tweets.append({'reply':reply,
                            'text':tweet})
             already_seen.append(doc_id)
@@ -59,7 +68,7 @@ def check_mail():
     for msg_id, data in mailserver.fetch(msg_ids, 'RFC822').items():
         msg = email.message_from_bytes(data[b'RFC822']).as_string()
 
-        senders = msg.split('Sending Parties:')[1].split('Document Title')[0].strip().replace('=\n','').split('\n\t')
+        senders = msg.split('Sending Parties:')[1].split('Document Title')[0].strip().replace('=\n','').replace('=20','').split('\n\t')
 
         if 'Musk, Elon R.' in senders:
             trimmed_sender = 'Elon Musk'
@@ -68,11 +77,17 @@ def check_mail():
         else:
             trimmed_sender = senders[0]
 
-        intro = f'New filing from {trimmed_sender}:'
+        intro = (f'New filing from {trimmed_sender}:' if 'N/A' not in senders[0]
+                    else 'New filing:')
 
-        docs = msg.split('Document Title(s):')[1].split('Link to transaction')[0].strip().replace('=\n','').replace('=E2=80=99', "'").split('\n\t')
-        match = re.search(r'(.*?)(\(\d+ pages\))', docs[0])
-        doc_title, page_count = match.group(1).strip(), match.group(2)
+        docs = msg.split('Document Title(s):')[1].split('Link to transaction')[0].strip().replace('=\n','').replace('=E2=80=99', "'").replace('=A7','§').split('\n\t')
+
+        try:
+            match = re.search(r'(.*?)(\(\d+ pages?\))', docs[0])
+            doc_title, page_count = match.group(1).strip(), match.group(2)
+        except:
+            doc_title = docs[0]
+            page_count = ''
 
         appendix = '(plus attachments)' if len(docs) > 1 else ''
 
@@ -81,7 +96,7 @@ def check_mail():
                         else doc_title)
 
         tweets.append({'reply':'',
-                       'text':' '.join([intro, trunc_title,
+                       'text':' '.join([intro, trunc_title, 
                                         page_count, appendix])})
 
     mailserver.logout()
@@ -105,7 +120,7 @@ def main():
             print(tweet.get('text','hmmm no tweet text'))
             if tweet.get('reply'):
                 client.create_tweet(text=tweet.get('text'),
-                                in_repy_to_tweet_id=tweet.get('reply'))
+                                in_reply_to_tweet_id=tweet.get('reply'))
             else:
                 client.create_tweet(text=tweet.get('text'))
 
